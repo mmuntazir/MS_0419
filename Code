@@ -1,0 +1,278 @@
+
+library(ggplot2)
+library(shiny)
+library(dplyr)
+library(forestplot)
+library(ggthemes)
+
+setwd("C:/Chicago_RAN/Projects/Milestones_Track")
+dat <- read.csv("export_04132016.tsv", sep='\t')
+names(dat)
+dat$ACTUAL_SERVICE_DATE	=as.Date(as.character(dat$ACTUAL_SERVICE_DATE),format="%m/%d/%Y")
+dat$ACTUAL_ISSUE_DATE	=as.Date(as.character(dat$ACTUAL_ISSUE_DATE),format="%m/%d/%Y")
+dat$ISSUE_DATE_ORIGINAL_ACTUAL	=as.Date(as.character(dat$ISSUE_DATE_ORIGINAL_ACTUAL),format="%m/%d/%Y")
+dat$JI009_FORECAST	=as.Date(as.character(dat$JI009_FORECAST),format="%d-%b-%y")
+dat$JI009_ACTUAL	=as.Date(as.character(dat$JI009_ACTUAL),format="%d-%b-%y")
+dat$SS019_FORECAST	=as.Date(as.character(dat$SS019_FORECAST),format="%d-%b-%y")
+dat$SS019_ACTUAL	=as.Date(as.character(dat$SS019_ACTUAL),format="%d-%b-%y")
+dat$RE020_FORECAST	=as.Date(as.character(dat$RE020_FORECAST),format="%d-%b-%y")
+dat$RE020_ACTUAL	=as.Date(as.character(dat$RE020_ACTUAL),format="%d-%b-%y")
+dat$CI025_FORECAST	=as.Date(as.character(dat$CI025_FORECAST),format="%d-%b-%y")
+dat$CI025_ACTUAL	=as.Date(as.character(dat$CI025_ACTUAL),format="%d-%b-%y")
+dat$CI020_FORECAST	=as.Date(as.character(dat$CI020_FORECAST),format="%d-%b-%y")
+dat$CI020_ACTUAL	=as.Date(as.character(dat$CI020_ACTUAL),format="%d-%b-%y")
+dat$CI035_FORECAST	=as.Date(as.character(dat$CI035_FORECAST),format="%d-%b-%y")
+dat$CI035_ACTUAL	=as.Date(as.character(dat$CI035_ACTUAL),format="%d-%b-%y")
+dat$CI050_FORECAST	=as.Date(as.character(dat$CI050_FORECAST),format="%d-%b-%y")
+dat$CI050_ACTUAL	=as.Date(as.character(dat$CI050_ACTUAL),format="%d-%b-%y")
+dat$ONAIR_FORECAST	=as.Date(as.character(dat$ONAIR_FORECAST),format="%d-%b-%y")
+dat$ONAIR_ACTUAL	=as.Date(as.character(dat$ONAIR_ACTUAL),format="%d-%b-%y")
+
+# Adding new column for Interval calculation from today
+
+# SIte Acq Phase
+dat$sac <- as.integer(Sys.Date() - dat$SS019_ACTUAL)
+# Construction Phase
+dat$cons <- as.integer(Sys.Date() - dat$CI025_ACTUAL)
+# Integration Phase
+dat$int <- as.integer(Sys.Date() - dat$CI050_ACTUAL)
+# OnAir Phase
+dat$oac <- as.integer(Sys.Date() - dat$CI035_ACTUAL)
+
+
+
+
+
+
+
+
+ui <- fluidPage(
+        titlePanel("Milestone Analysis"),
+        sidebarLayout(
+                sidebarPanel(
+                        # helpText("Display Milestones data."),
+                        radioButtons("radio", label = h3("Level of Analysis"),
+                                     choices = list("Region" = "REGION", "Market" = "MARKET",
+                                                    "Sub-Market" = "SUB_MARKET_NAME", "Zone" = "ZONE_NAME"),selected = "REGION"),
+                        selectInput("reg", 
+                                    label = "Choose a Region",
+                                    choices = c("All",as.character(sort(unique(as.character(dat$REGION))))),
+                                    selected = "All"),
+                        selectInput("mkt", 
+                                    label = "Choose a Market",
+                                    choices = c("All",as.character(sort(unique(as.character(dat$MARKET))))),
+                                    selected = "All"),
+                        selectInput("smkt", 
+                                    label = "Choose a Sub-Market",
+                                    choices = c("All", as.character(sort(unique(as.character(dat$SUB_MARKET_NAME))))),
+                                    selected = "All"),
+                        selectInput("zone", 
+                                    label = "Choose a Zone",
+                                    choices = c("All", as.character(sort(unique(as.character(dat$ZONE_NAME))))),
+                                    selected = "All"),
+                        selectInput("intv", 
+                                    label = "Choose an Interval",
+                                    choices = c("Site Acquisition Phase" = "sac",
+                                                "Construction Phase" = "cons",
+                                                "Integration Phase" = "int",
+                                                "Post-Integration Phase" = "oac"),
+                                    selected = 1)
+                        
+                        
+                ),
+                
+                mainPanel(
+                        tabsetPanel(
+                                tabPanel("Interval Boxplots",
+                                         h3("Interval Phase"),
+                                         plotOutput("map"),
+                                         textOutput("text1")
+                                ),
+                                tabPanel("State Map",
+                                         h4("State wide Progress - Time between Integration Complete to On-Air"),
+                                         plotOutput("statemap"),
+                                         tableOutput('table')
+                                         
+                                         
+                                )
+                                
+                        )
+                        
+                )
+        )
+)
+
+
+
+
+# server.R
+
+
+
+server <- function(input, output) {
+        
+        Newmain <- reactive({
+                if(input$reg == "All") {
+                        dat = dat
+                } else {
+                        dat = subset(dat, REGION == input$reg)
+                }
+                if(input$mkt == "All") {
+                        dat = dat
+                } else {
+                        dat = subset(dat, MARKET == input$mkt)
+                }
+                if(input$smkt == "All") {
+                        dat = dat
+                } else {
+                        dat = subset(dat, SUB_MARKET_NAME == input$smkt)
+                }
+                
+                if(input$intv == "sac") {
+                        dat1 <- dat[dat$RE020_SS019_STATE == "RUNNING",]
+                } else if(input$intv == "cons") {
+                        dat1 <- dat[dat$CI050_CI025_STATE == "RUNNING",]
+                } else if(input$intv == "int") {
+                        dat1 <- dat[dat$CI035_CI020_STATE == "RUNNING",]
+                } else if(input$intv == "oac") {
+                        dat1 <- dat[dat$ONAIR_CI035_STATE == "RUNNING",]
+                }
+                
+                return(dat1)
+        })
+        
+        fplotdata <- reactive({
+                yoo <- Newmain()
+                y2 <- yoo[,c("REGION", "MARKET", "SUB_MARKET_NAME","JOB_NUMBER", "sac", "cons", "int", "oac")]
+                yy <- as.symbol(input$intv)
+                xx <- as.symbol(input$radio)
+                yoo.median <- y2 %>%
+                        group_by_(input$radio) %>%
+                        summarise(sac_median= median(sac),
+                                  cons_median= median(cons),
+                                  int_median= median(int),
+                                  oac_median= median(oac))
+                
+                #                 yoo.low <- y2 %>%
+                #                         group_by(as.character(xx)) %>%
+                #                         summarise(sac_low= quantile(sac,.25),
+                #                                   cons_low= quantile(!is.na(cons),.25),
+                #                                   int_low= quantile(!is.na(int),.25),
+                #                                   oac_low= quantile(!is.na(oac),.25))
+                #                 
+                #                 yoo.high <- y2 %>%
+                #                         group_by(as.character(xx)) %>%
+                #                         summarise(sac_high= quantile(sac,.75),
+                #                                   cons_high= quantile(!is.na(cons),.75),
+                #                                   int_high= quantile(!is.na(int),.75),
+                #                                   oac_high= quantile(!is.na(oac),.75))
+                
+                
+                #                 yooo <- cbind(yoo.median, yoo.low, yoo.high)
+                #                 head(yooo)
+                #                 yooo <- yooo[,-c(6,11)]
+                #                 
+                #                 yooo <- yooo %>%
+                #                         arrange(desc(sac_median))
+                return(yoo.median)
+                
+        })
+        
+        #         mean_sumry <- reactive({
+        #                 oa$RE020 <- as.integer(oa$RE020_ACTUAL - oa$JI009_ACTUAL)
+        #                 oa$CI020 <- as.integer(oa$CI020_ACTUAL - oa$CI025_ACTUAL)
+        #                 oa$CI035 <- as.integer(oa$CI035_ACTUAL - oa$CI020_ACTUAL)
+        #                 oa$CI032 <- as.integer(oa$CI032_ACTUAL - oa$CI035_ACTUAL)
+        #                 dat.mean <- oa %>%
+        #                         group_by(STATE) %>%
+        #                         summarise(RE020_mean= mean(RE020, na.rm=TRUE),
+        #                                   CI020_mean= mean(CI020, na.rm=TRUE),
+        #                                   CI035_mean= mean(CI035, na.rm=TRUE),
+        #                                   CI032_mean= mean(CI032, na.rm=TRUE),
+        #                                   n=n())
+        #                 
+        #                 return(dat.mean)
+        #         })
+        
+        output$map <- renderPlot({
+                dd <- Newmain()
+                yy <- as.symbol(input$intv)
+                xx <- as.symbol(input$radio)
+                if(input$intv == "sac") {
+                        tt = "Site Acquisition Phase"
+                } else if(input$intv == "cons") {
+                        tt <- "Construction Phase"
+                } else if(input$intv == "int") {
+                        tt <- "Integration Phase"
+                } else if(input$intv == "oac") {
+                        tt <- "Post-Integration Phase"
+                }
+                
+                
+                
+                
+                
+                # .e <- environment()
+                
+                # p <- ggplot(dat1, aes(SUB_MARKET_NAME, sac), environment = .e) + geom_boxplot()
+                p <- ggplot(dd, aes_string(xx, yy)) + geom_boxplot()+  geom_hline(yintercept = 24, lty=2)+
+                        theme(text = element_text(size=12))+ggtitle(tt)
+                # p <- p + geom_boxplot(aes(fill=REGION))+scale_y_continuous(limits=c(0,200))+theme_economist()+
+                # geom_hline(yintercept = 24, lty=2)+theme(text = element_text(size=12))+ggtitle("Aging Post Integration")
+                
+                #                 p <- ggplot(aes_string(x=input$intv), data=dd)+geom_histogram()
+                #                                        scale_x_continuous(limits=c(0,1000), breaks= seq(0,1000,100)
+                print(p)
+        })
+        output$text1 <- renderText({ 
+                xx <- input$radio
+                print(xx)
+        })
+        # #         output$statemap <- renderPlot({
+        # #                 dd <- mean_sumry()
+        # #                 dd<-dat.mean
+        # #                 states <- map_data("state")
+        # #                 st_all <- full_join(states, sd, by="region")
+        # #                 con <- inner_join(st_all, dd, by="STATE")
+        # #                 ditch_the_axes <- theme(
+        # #                         axis.text = element_blank(),
+        # #                         axis.line = element_blank(),
+        # #                         axis.ticks = element_blank(),
+        # #                         panel.border = element_blank(),
+        # #                         panel.grid = element_blank(),
+        # #                         axis.title = element_blank()
+        # #                 )
+        #                 ### calculating gradient values
+        #                 
+        #                 #                 ss <- 
+        #                 #                 tt <- as.character(ss)
+        #                 #                 de <- match(tt,names(dd))
+        #                 #                 maxv <- round(max(dd[de]),0)
+        #                 #                 minv <- round(min(dd[de]),0)
+        #                 #                 xx <- round((maxv-minv)/7,0)
+        #                 ca_base <- ggplot(data = states, mapping = aes(x = long, y = lat, group = group)) + 
+        #                         coord_fixed(1.3) + 
+        #                         geom_polygon(color = "black", fill = "gray")
+        #                 elbow_room1 <- ca_base + 
+        #                         geom_polygon(data = con, aes_string(fill = input$intv), color = "white") +
+        #                         geom_polygon(color = "black", fill = NA) +
+        #                         theme_bw()+
+        #                         ditch_the_axes
+        #                 #                 elbow_room1 <- ca_base + 
+        #                 #                         geom_polygon(data = con, aes_string(fill = 'RE020_mean'), color = "white") +
+        #                 #                         geom_polygon(color = "black", fill = NA) +
+        #                 #                         theme_bw()+
+        #                 #                         ditch_the_axes
+        #                 eb1 <- elbow_room1 + scale_fill_gradient(trans = "log10")
+        #                 eb2 <- elbow_room1 + 
+        #                         scale_fill_gradientn(colours = rev(rainbow(7)),
+        #                                              trans = "log2")
+        #                 
+        #                 
+        #                 print(eb2)
+        #                 
+        #         })
+        output$table <- renderTable(fplotdata())
+}
+
+shinyApp(ui=ui, server=server) 
